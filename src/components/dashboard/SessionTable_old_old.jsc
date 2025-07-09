@@ -1,0 +1,47 @@
+// src/components/dashboard/SessionTable.jsx
+
+export default function SessionTable({ sessions }) {
+  return (
+    <table className="w-full text-sm">
+      <thead className="text-left text-muted">
+        <tr>
+          <th>ID</th>
+          <th>CP</th>
+          <th>User</th>
+          <th>kWh</th>
+          <th>Started</th>
+          <th>Ended</th>
+        </tr>
+      </thead>
+      <tbody>
+        {sessions.map((session) => {
+          // fallbacks if your API fields are named differently
+          const id    = session.id    ?? session.tx_id    ?? "—";
+          const cpId  = session.cpId  ?? session.cp_id    ?? "—";
+          const user  = session.user  ?? session.idTag    ?? "—";
+          const kwh   = session.kwh   ?? session.kWh      ?? null;
+          const start = session.start ?? session.started  ?? null;
+          const stop  = session.stop  ?? session.ended    ?? null;
+
+          return (
+            <tr key={id} className="border-b last:border-none">
+              <td>{id}</td>
+              <td>{cpId}</td>
+              <td>{user}</td>
+              <td>
+                {typeof kwh === "number" ? kwh.toFixed(2) : "—"}
+              </td>
+              <td>
+                {start ? new Date(start).toLocaleString() : "—"}
+              </td>
+              <td>
+                {stop ? new Date(stop).toLocaleString() : "—"}
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
