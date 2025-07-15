@@ -4,3 +4,14 @@
 
 /* custom tweaks here */
 
+/* src/index.css — at the bottom is fine */
+.btn{
+  display:inline-block;
+  padding:0.4rem 0.8rem;
+  border:1px solid #ccc;
+  border-radius:4px;
+}
+.btn:hover{
+  background:#f1f5f9;
+}
+

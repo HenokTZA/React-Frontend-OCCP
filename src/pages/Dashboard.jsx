@@ -69,7 +69,7 @@ export default function Dashboard() {
       <div>
         <p className="mb-1">Connect your charge-points to:</p>
         <code className="block p-2 bg-slate-100 rounded">
-          {me.tenant_ws.replace(/^ws:\/\/[^/]+/, "ws://147.92.127.215:9000")}
+          {me.tenant_ws.replace(/^ws:\/\/[^/]+/, "ws://147.93.127.215:9000")}
         </code>
       </div>
 
@@ -87,11 +87,15 @@ export default function Dashboard() {
             </thead>
             <tbody>
               {cps.map(cp => (
-                <tr key={cp.id} className="border-b last:border-0">
+                <tr key={cp.id} 
+                    className="border-b last:border-0 cursor-pointer hover:bg-slate-100"
+                    onClick={() => location.href = `/cp/${cp.id}`}
+                >
                   <td>{cp.id}</td>
                   <td>{cp.status}</td>
                   <td>{cp.connector_id}</td>
                   <td>{fmt(cp.updated)}</td>
+                  <td>{new Date(cp.updated).toLocaleString()}</td>
                 </tr>
               ))}
             </tbody>

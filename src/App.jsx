@@ -3,6 +3,7 @@ import { useAuth } from "@/lib/auth";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import Dashboard from "./pages/Dashboard";
+import CpDetail   from "@/pages/CpDetail.jsx";
 
 function ProtectedRoute({ children }) {
   const { isAuth } = useAuth();
@@ -12,6 +13,7 @@ function ProtectedRoute({ children }) {
 export default function App() {
   return (
     <Routes>
+      <Route path="/cp/:id"    element={<CpDetail />} />
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
       <Route
