@@ -1,5 +1,5 @@
 /**********************************************************************
- * Dashboard.jsx – same as before, but “Set location” has a nice modal *
+ * Dashboard.jsx  – with “Edit connector” modal                       *
  *********************************************************************/
 import { useEffect, useState } from "react";
 import { createPortal }        from "react-dom";
@@ -9,33 +9,29 @@ import { useAuth }             from "@/lib/auth";
 /* ─────────────── helpers ────────────────────────────────────────── */
 const fmt = d => (d ? new Date(d).toLocaleString() : "—");
 const LS_KWH = "cp_price_kwh";
-const LS_HR  = "cp_price_hr";
+const LS_HOUR= "cp_price_hour";
 const LS_LOC = "cp_location";
-const load   = k => { try { return JSON.parse(localStorage.getItem(k) || "{}"); }
-                      catch { return {}; } };
-const save   = (k,o)=> localStorage.setItem(k,JSON.stringify(o));
+const load   = key => { try { return JSON.parse(localStorage.getItem(key)||"{}"); }
+                        catch { return {}; } };
+const save   = (key,obj)=> localStorage.setItem(key,JSON.stringify(obj));
 
 /* ────────────────────────────────────────────────────────────────── */
 export default function Dashboard() {
-  /* server-side data */
-  const [me,  setMe ] = useState(null);
-  const [cps, setCps] = useState(null);
-  const [sessions,setSes]=useState(null);
+  /* server data */
+  const [me, setMe]         = useState(null);
+  const [cps, setCps]       = useState(null);
+  const [sessions,setSess ] = useState(null);
 
   /* client-side extras */
-  const [kwh ,setKwh ] = useState(()=>load(LS_KWH));
-  const [hr  ,setHr  ] = useState(()=>load(LS_HR ));
-  const [loc ,setLoc ] = useState(()=>load(LS_LOC));
+  const [kwh, setKwh]   = useState(()=>load(LS_KWH));
+  const [hour,setHour ] = useState(()=>load(LS_HOUR));
+  const [loc ,setLoc  ] = useState(()=>load(LS_LOC));
 
-  /* menu / modal state */
-  const [menuOpen ,setMenu ] = useState(null);   // cp id | null
-  const [editCP  ,setEdit ] = useState(null);    // cp id | null  (price modal)
-  const [locCP   ,setLocCP] = useState(null);    // cp id | null  (location modal)
-
-  /* temp fields for modals */
-  const [tmpK,setTmpK]  = useState("");
-  const [tmpH,setTmpH]  = useState("");
-  const [tmpL,setTmpL]  = useState("");
+  /* UI state */
+  const [menuOpen,setMenu]   = useState(null);     // cp id | null
+  const [modalCP,setModalCP] = useState(null);     // cp id | null
+  const [tmpK ,setTmpK]      = useState("");       // controlled inputs
+  const [tmpH ,setTmpH]      = useState("");
 
   /* auth + first fetch */
   const { logout } = useAuth();
@@ -46,25 +42,28 @@ export default function Dashboard() {
     if(!me?.tenant_ws) return;
     const load=()=>Promise.all([
       fetchJson("/charge-points/"), fetchJson("/sessions/")
-    ]).then(([c,s])=>{setCps(c); setSes(s);});
+    ]).then(([c,s])=>{setCps(c); setSess(s);});
     load();
     const t=setInterval(load,5_000);
     return ()=>clearInterval(t);
   },[me]);
 
-  /* ——— persistence helpers ——— */
-  const updPrice = (id,pk,ph)=>{
-    const nk={...kwh ,[id]:pk}; save(LS_KWH,nk); setKwh(nk);
-    const nh={...hr  ,[id]:ph}; save(LS_HR ,nh); setHr (nh);
+  /* helpers to persist */
+  const updPrice=(id,pk,ph)=>{
+    const nk={...kwh ,[id]:pk};
+    const nh={...hour,[id]:ph};
+    setKwh(nk); save(LS_KWH,nk);
+    setHour(nh);save(LS_HOUR,nh);
   };
-  const updLoc   = (id,l)=>{
-    const nl={...loc ,[id]:l};  save(LS_LOC,nl); setLoc(nl);
+  const updLoc =(id,l)=>{
+    const nl={...loc,[id]:l};
+    setLoc(nl); save(LS_LOC,nl);
   };
 
   /* early returns */
-  if(!me)             return <p className="p-8">Loading…</p>;
-  if(!me.tenant_ws)   return <p className="p-8">You don’t own a tenant yet.</p>;
-  if(!cps||!sessions) return <p className="p-8">Loading charge-points…</p>;
+  if(!me)                return <p className="p-8">Loading…</p>;
+  if(!me.tenant_ws)      return <p className="p-8">You don’t own a tenant yet.</p>;
+  if(!cps||!sessions)    return <p className="p-8">Loading charge-points…</p>;
 
   /* ─────────────── render ───────────────────────────────────────── */
   return (
@@ -82,7 +81,6 @@ export default function Dashboard() {
       {/* charge-points */}
       <section>
         <h2 className="text-xl font-semibold mb-2">Charge-points</h2>
-
         <table className="w-full text-sm">
           <thead className="text-left border-b">
             <tr>
@@ -101,7 +99,7 @@ export default function Dashboard() {
                   <td>{cp.connector_id}</td>
                   <td>{fmt(cp.updated)}</td>
                   <td className="text-right">{kwh[id] ?? "—"}</td>
-                  <td className="text-right">{hr [id] ?? "—"}</td>
+                  <td className="text-right">{hour[id]?? "—"}</td>
                   <td className="relative">
                     <button className="px-2 text-lg" onClick={()=>setMenu(m=>m===id?null:id)}>⋮</button>
                     {menuOpen===id && (
@@ -110,11 +108,13 @@ export default function Dashboard() {
                         onMouseLeave={()=>setMenu(null)}
                       >
                         <Li label="✏️  Edit connector" cb={()=>{
-                          setTmpK(kwh[id]??""); setTmpH(hr[id]??"");
-                          setEdit(id); setMenu(null);
+                          setTmpK(kwh[id]??"");
+                          setTmpH(hour[id]??"");
+                          setModalCP(id); setMenu(null);
                         }}/>
                         <Li label="📍 Set location" cb={()=>{
-                          setTmpL(loc[id]??""); setLocCP(id); setMenu(null);
+                          const l=prompt("Location",loc[id]??"") ?? "";
+                          updLoc(id,l.trim()); setMenu(null);
                         }}/>
                         <Li label="👥 Define users" disabled/>
                         <Li label="🗓️  Define times" disabled/>
@@ -140,12 +140,12 @@ export default function Dashboard() {
             {sessions.map(s=>{
               const k=Number(s.kWh??0);
               const p=kwh[s.cp]??0;
-              const tot=p ? (k*p).toFixed(2) : "—";
-              return (
+              const t=p?(k*p).toFixed(2):"—";
+              return(
                 <tr key={s.id} className="border-b last:border-0">
                   <td>{s.id}</td><td>{s.cp}</td><td>{k.toFixed(3)}</td>
                   <td>{fmt(s.Started)}</td><td>{fmt(s.Ended)}</td>
-                  <td className="text-right">{tot}</td>
+                  <td className="text-right">{t}</td>
                 </tr>
               );
             })}
@@ -153,60 +153,50 @@ export default function Dashboard() {
         </table>
       </section>
 
-      {/* ── price modal ───────────────────────────────────────────── */}
-      {editCP && createPortal(
-        <Modal onClose={()=>setEdit(null)}>
+      {/* Modal, rendered into <body> so it escapes table overflow */}
+      {modalCP && createPortal(
+        <Modal onClose={()=>setModalCP(null)}>
           <h2 className="text-xl font-semibold mb-4">Edit connector</h2>
 
+          {/* Prices card */}
           <div className="mb-6 p-4 rounded shadow border">
             <h3 className="font-medium mb-4">Prices</h3>
             <div className="grid grid-cols-2 gap-6">
-              <Field label="Price per kWh (€)" value={tmpK}
-                     onChange={e=>setTmpK(e.target.value)}/>
-              <Field label="Price per h  (€)" value={tmpH}
-                     onChange={e=>setTmpH(e.target.value)}/>
+              <Field
+                label="Price per kWh"
+                value={tmpK}
+                onChange={e=>setTmpK(e.target.value)}
+              />
+              <Field
+                label="Price per h"
+                value={tmpH}
+                onChange={e=>setTmpH(e.target.value)}
+              />
             </div>
           </div>
 
-          <ModalButtons
-            onCancel={()=>setEdit(null)}
-            onSave  ={()=>{
-              updPrice(editCP,Number(tmpK)||0,Number(tmpH)||0);
-              setEdit(null);
-            }}
-          />
-        </Modal>, document.body )}
-
-      {/* ── location modal ────────────────────────────────────────── */}
-      {locCP && createPortal(
-        <Modal onClose={()=>setLocCP(null)}>
-          <h2 className="text-xl font-semibold mb-4">Set location</h2>
-
-          <div className="mb-6 p-4 rounded shadow border">
-            <Field
-              label="Location / address"
-              value={tmpL}
-              onChange={e=>setTmpL(e.target.value)}
-            />
-            <p className="mt-2 text-xs text-slate-500">
-              Any free-form text (address, GPS coords…). Kept only in your browser for now.
-            </p>
+          {/* Buttons */}
+          <div className="flex justify-end gap-3">
+            <button
+              className="px-4 py-1.5 rounded bg-slate-100"
+              onClick={()=>setModalCP(null)}
+            >Cancel</button>
+            <button
+              className="px-4 py-1.5 rounded bg-blue-600 text-white"
+              onClick={()=>{
+                updPrice(modalCP,Number(tmpK)||0,Number(tmpH)||0);
+                setModalCP(null);
+              }}
+            >Save</button>
           </div>
-
-          <ModalButtons
-            onCancel={()=>setLocCP(null)}
-            onSave  ={()=>{
-              updLoc(locCP,tmpL.trim());
-              setLocCP(null);
-            }}
-          />
-        </Modal>, document.body )}
+        </Modal>
+      ,document.body)}
     </div>
   );
 }
 
-/* ——————————— small presentational helpers ——————————— */
-const Li = ({label,cb,disabled})=>(
+/* ————————————————— components ————————————————— */
+const Li=({label,cb,disabled})=>(
   <li>
     <button
       disabled={disabled}
@@ -216,30 +206,33 @@ const Li = ({label,cb,disabled})=>(
   </li>
 );
 
-const Modal = ({children,onClose})=>(
-  <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/30"
-       onClick={onClose}>
-    <div className="max-h-[90vh] w-[34rem] overflow-y-auto bg-white rounded shadow-lg p-6"
-         onClick={e=>e.stopPropagation()}>
+/* simple full-screen overlay modal */
+const Modal=({children,onClose})=>(
+  <div
+    className="fixed inset-0 z-20 flex items-center justify-center bg-black/30"
+    onClick={onClose}
+  >
+    <div
+      className="max-h-[90vh] w-[36rem] overflow-y-auto bg-white rounded shadow-lg p-6"
+      onClick={e=>e.stopPropagation()}
+    >
       {children}
     </div>
   </div>
 );
 
-const Field = ({label,value,onChange})=>(
+/* labeled input */
+const Field=({label,value,onChange})=>(
   <label className="block">
     <span className="text-sm text-slate-600">{label}</span>
-    <input
-      className="mt-1 w-full border-b outline-none focus:border-blue-500 py-1"
-      value={value} onChange={onChange}
-    />
+    <div className="flex items-center border-b focus-within:border-blue-500">
+      <input
+        type="number" step="0.01"
+        className="flex-1 px-1 py-1 outline-none"
+        value={value} onChange={onChange}
+      />
+      <span className="pr-1 text-xs text-slate-500">€</span>
+    </div>
   </label>
-);
-
-const ModalButtons = ({onCancel,onSave})=>(
-  <div className="flex justify-end gap-3">
-    <button className="px-4 py-1.5 rounded bg-slate-100" onClick={onCancel}>Cancel</button>
-    <button className="px-4 py-1.5 rounded bg-blue-600 text-white" onClick={onSave}>Save</button>
-  </div>
 );
 
