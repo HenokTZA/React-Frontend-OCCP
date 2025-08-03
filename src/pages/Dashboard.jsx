@@ -1,5 +1,5 @@
 /**********************************************************************
- * Dashboard.jsx – same as before, but “Set location” has a nice modal *
+ * Dashboard.jsx – prices + location stored in DB (no localStorage)   *
  *********************************************************************/
 import { useEffect, useState } from "react";
 import { createPortal }        from "react-dom";
@@ -8,12 +8,14 @@ import { useAuth }             from "@/lib/auth";
 
 /* ─────────────── helpers ────────────────────────────────────────── */
 const fmt = d => (d ? new Date(d).toLocaleString() : "—");
-const LS_KWH = "cp_price_kwh";
-const LS_HR  = "cp_price_hr";
-const LS_LOC = "cp_location";
-const load   = k => { try { return JSON.parse(localStorage.getItem(k) || "{}"); }
-                      catch { return {}; } };
-const save   = (k,o)=> localStorage.setItem(k,JSON.stringify(o));
+
+/** one-liner wrapper around fetchJson for PATCHing a CP row */
+function patchCP(id, body) {
+  return fetchJson(`/charge-points/${id}/`, {
+    method : "PATCH",
+    body   : JSON.stringify(body),
+  });
+}
 
 /* ────────────────────────────────────────────────────────────────── */
 export default function Dashboard() {
@@ -22,49 +24,57 @@ export default function Dashboard() {
   const [cps, setCps] = useState(null);
   const [sessions,setSes]=useState(null);
 
-  /* client-side extras */
-  const [kwh ,setKwh ] = useState(()=>load(LS_KWH));
-  const [hr  ,setHr  ] = useState(()=>load(LS_HR ));
-  const [loc ,setLoc ] = useState(()=>load(LS_LOC));
+  /* menu / modal UI state */
+  const [menuOpen ,setMenu ] = useState(null);   // cp id | null (⋮ menu)
+  const [editCP  ,setEdit ] = useState(null);    // cp id | null (price modal)
+  const [locCP   ,setLocCP] = useState(null);    // cp id | null (location modal)
 
-  /* menu / modal state */
-  const [menuOpen ,setMenu ] = useState(null);   // cp id | null
-  const [editCP  ,setEdit ] = useState(null);    // cp id | null  (price modal)
-  const [locCP   ,setLocCP] = useState(null);    // cp id | null  (location modal)
-
-  /* temp fields for modals */
+  /* temp input fields inside the two modals */
   const [tmpK,setTmpK]  = useState("");
   const [tmpH,setTmpH]  = useState("");
   const [tmpL,setTmpL]  = useState("");
 
-  /* auth + first fetch */
+  /* login + first fetch */
   const { logout } = useAuth();
-  useEffect(()=>{ fetchJson("/me").then(setMe).catch(()=>logout()); },[]);
+  useEffect(() => {
+    fetchJson("/me").then(setMe).catch(() => logout());
+  }, []);
 
-  /* load + poll */
-  useEffect(()=>{
-    if(!me?.tenant_ws) return;
-    const load=()=>Promise.all([
-      fetchJson("/charge-points/"), fetchJson("/sessions/")
-    ]).then(([c,s])=>{setCps(c); setSes(s);});
+  /* load + poll every 5 s */
+  useEffect(() => {
+    if (!me?.tenant_ws) return;
+    const load = () =>
+      Promise
+        .all([fetchJson("/charge-points/"), fetchJson("/sessions/")])
+        .then(([c, s]) => { setCps(c); setSes(s); });
+
     load();
-    const t=setInterval(load,5_000);
-    return ()=>clearInterval(t);
-  },[me]);
+    const t = setInterval(load, 5_000);
+    return () => clearInterval(t);
+  }, [me]);
 
-  /* ——— persistence helpers ——— */
-  const updPrice = (id,pk,ph)=>{
-    const nk={...kwh ,[id]:pk}; save(LS_KWH,nk); setKwh(nk);
-    const nh={...hr  ,[id]:ph}; save(LS_HR ,nh); setHr (nh);
-  };
-  const updLoc   = (id,l)=>{
-    const nl={...loc ,[id]:l};  save(LS_LOC,nl); setLoc(nl);
-  };
+  /* optimistic UI helpers ----------------------------------------- */
+  async function updatePrices(id) {
+    const pk = Number(tmpK) || 0;
+    const ph = Number(tmpH) || 0;
+    await patchCP(id, { price_per_kwh: pk, price_per_hour: ph });
+    setCps(arr => arr.map(c =>
+      c.id === id ? { ...c, price_per_kwh: pk, price_per_hour: ph } : c
+    ));
+  }
+
+  async function updateLocation(id) {
+    const location = tmpL.trim();
+    await patchCP(id, { location });
+    setCps(arr => arr.map(c =>
+      c.id === id ? { ...c, location } : c
+    ));
+  }
 
   /* early returns */
-  if(!me)             return <p className="p-8">Loading…</p>;
-  if(!me.tenant_ws)   return <p className="p-8">You don’t own a tenant yet.</p>;
-  if(!cps||!sessions) return <p className="p-8">Loading charge-points…</p>;
+  if (!me)             return <p className="p-8">Loading…</p>;
+  if (!me.tenant_ws)   return <p className="p-8">You don’t own a tenant yet.</p>;
+  if (!cps || !sessions) return <p className="p-8">Loading charge-points…</p>;
 
   /* ─────────────── render ───────────────────────────────────────── */
   return (
@@ -75,7 +85,7 @@ export default function Dashboard() {
       <div>
         <p className="mb-1">Connect your charge-points to:</p>
         <code className="block p-2 bg-slate-100 rounded">
-          {me.tenant_ws.replace(/^ws:\/\/[^/]+/,"ws://147.93.127.215:9000")}
+          {me.tenant_ws.replace(/^ws:\/\/[^/]+/, "ws://147.93.127.215:9000")}
         </code>
       </div>
 
@@ -92,55 +102,99 @@ export default function Dashboard() {
             </tr>
           </thead>
           <tbody>
-            {cps.map(cp=>{
-              const id=cp.id;
-              return (
-                <tr key={id} className="border-b last:border-0 hover:bg-slate-50">
-                  <td className="cursor-pointer" onClick={()=>location.href=`/cp/${id}`}>{id}</td>
-                  <td>{cp.status}</td>
-                  <td>{cp.connector_id}</td>
-                  <td>{fmt(cp.updated)}</td>
-                  <td className="text-right">{kwh[id] ?? "—"}</td>
-                  <td className="text-right">{hr [id] ?? "—"}</td>
-                  <td className="relative">
-                    <button className="px-2 text-lg" onClick={()=>setMenu(m=>m===id?null:id)}>⋮</button>
-                    {menuOpen===id && (
-                      <ul
-                        className="absolute right-0 z-10 mt-1 w-48 bg-white border rounded shadow"
-                        onMouseLeave={()=>setMenu(null)}
-                      >
-                        <Li label="✏️  Edit connector" cb={()=>{
-                          setTmpK(kwh[id]??""); setTmpH(hr[id]??"");
-                          setEdit(id); setMenu(null);
-                        }}/>
-                        <Li label="📍 Set location" cb={()=>{
-                          setTmpL(loc[id]??""); setLocCP(id); setMenu(null);
-                        }}/>
-                        <Li label="👥 Define users" disabled/>
-                        <Li label="🗓️  Define times" disabled/>
-                      </ul>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
+  {cps.map(cp => {
+    const fmtPrice = v =>
+      v == null ? "—" : Number(v).toFixed(3);     // 3 dec for kWh
+    const fmtHour  = v =>
+      v == null ? "—" : Number(v).toFixed(2);     // 2 dec for €/h
+
+    return (
+      <tr
+        key={cp.id}
+        className="border-b last:border-0 hover:bg-slate-50"
+      >
+        {/* ── ident / quick-link ───────────────────────── */}
+        <td
+          className="cursor-pointer"
+          onClick={() => (location.href = `/cp/${cp.id}`)}
+        >
+          {cp.id}
+        </td>
+
+        {/* ── live status coming from the backend ─────── */}
+        <td>{cp.status}</td>
+        <td>{cp.connector_id}</td>
+        <td>{fmt(cp.updated)}</td>
+
+        {/* ── persisted prices ────────────────────────── */}
+        <td className="text-right">{fmtPrice(cp.price_per_kwh)}</td>
+        <td className="text-right">{fmtHour(cp.price_per_hour)}</td>
+
+        {/* ── “⋮” context menu ───────────────────────── */}
+        <td className="relative">
+          <button
+            className="px-2 text-lg"
+            onClick={() => setMenu(m => (m === cp.id ? null : cp.id))}
+          >
+            ⋮
+          </button>
+
+          {menuOpen === cp.id && (
+            <ul
+              className="absolute right-0 z-10 mt-1 w-48 bg-white border rounded shadow"
+              onMouseLeave={() => setMenu(null)}
+            >
+              <Li
+                label="✏️  Edit connector"
+                cb={() => {
+                  /* pre-fill modal fields with CURRENT values */
+                  setTmpK(cp.price_per_kwh  ?? "");
+                  setTmpH(cp.price_per_hour ?? "");
+                  setEdit(cp.id);
+                  setMenu(null);
+                }}
+              />
+              <Li
+                label="📍 Set location"
+                cb={() => {
+                  setTmpL(cp.location ?? "");
+                  setLocCP(cp.id);
+                  setMenu(null);
+                }}
+              />
+              <Li label="👥 Define users"  disabled />
+              <Li label="🗓️  Define times" disabled />
+            </ul>
+          )}
+        </td>
+      </tr>
+    );
+  })}
+</tbody>
+
         </table>
       </section>
 
       {/* recent sessions */}
       <section>
         <h2 className="text-xl font-semibold mb-2">Recent sessions</h2>
+
         <table className="w-full text-sm">
           <thead className="text-left border-b">
-            <tr><th>ID</th><th>CP</th><th>kWh</th><th>Started</th><th>Stopped</th>
-                <th className="text-right">Total (€)</th></tr>
+            <tr>
+              <th>ID</th><th>CP</th><th>kWh</th>
+              <th>Started</th><th>Stopped</th>
+              <th className="text-right">Total (€)</th>
+            </tr>
           </thead>
           <tbody>
-            {sessions.map(s=>{
-              const k=Number(s.kWh??0);
-              const p=kwh[s.cp]??0;
-              const tot=p ? (k*p).toFixed(2) : "—";
+            {sessions.map(s => {
+              const cp = cps.find(c => c.id === s.cp);          // look up price
+              const k  = Number(s.kWh ?? 0);
+              const tot = cp?.price_per_kwh
+                ? (k * cp.price_per_kwh).toFixed(2)
+                : "—";
+
               return (
                 <tr key={s.id} className="border-b last:border-0">
                   <td>{s.id}</td><td>{s.cp}</td><td>{k.toFixed(3)}</td>
@@ -155,91 +209,118 @@ export default function Dashboard() {
 
       {/* ── price modal ───────────────────────────────────────────── */}
       {editCP && createPortal(
-        <Modal onClose={()=>setEdit(null)}>
+        <Modal onClose={() => setEdit(null)}>
           <h2 className="text-xl font-semibold mb-4">Edit connector</h2>
 
           <div className="mb-6 p-4 rounded shadow border">
             <h3 className="font-medium mb-4">Prices</h3>
             <div className="grid grid-cols-2 gap-6">
-              <Field label="Price per kWh (€)" value={tmpK}
-                     onChange={e=>setTmpK(e.target.value)}/>
-              <Field label="Price per h  (€)" value={tmpH}
-                     onChange={e=>setTmpH(e.target.value)}/>
+              <Field
+                label="Price per kWh (€)"
+                value={tmpK}
+                onChange={e => setTmpK(e.target.value)}
+              />
+              <Field
+                label="Price per h  (€)"
+                value={tmpH}
+                onChange={e => setTmpH(e.target.value)}
+              />
             </div>
           </div>
 
           <ModalButtons
-            onCancel={()=>setEdit(null)}
-            onSave  ={()=>{
-              updPrice(editCP,Number(tmpK)||0,Number(tmpH)||0);
+            onCancel={() => setEdit(null)}
+            onSave={async () => {
+              await updatePrices(editCP);
               setEdit(null);
             }}
           />
-        </Modal>, document.body )}
+        </Modal>,
+        document.body
+      )}
 
       {/* ── location modal ────────────────────────────────────────── */}
       {locCP && createPortal(
-        <Modal onClose={()=>setLocCP(null)}>
+        <Modal onClose={() => setLocCP(null)}>
           <h2 className="text-xl font-semibold mb-4">Set location</h2>
 
           <div className="mb-6 p-4 rounded shadow border">
             <Field
               label="Location / address"
               value={tmpL}
-              onChange={e=>setTmpL(e.target.value)}
+              onChange={e => setTmpL(e.target.value)}
             />
             <p className="mt-2 text-xs text-slate-500">
-              Any free-form text (address, GPS coords…). Kept only in your browser for now.
+              Saved in the backend and shared with everyone on this tenant.
             </p>
           </div>
 
           <ModalButtons
-            onCancel={()=>setLocCP(null)}
-            onSave  ={()=>{
-              updLoc(locCP,tmpL.trim());
+            onCancel={() => setLocCP(null)}
+            onSave={async () => {
+              await updateLocation(locCP);
               setLocCP(null);
             }}
           />
-        </Modal>, document.body )}
+        </Modal>,
+        document.body
+      )}
     </div>
   );
 }
 
 /* ——————————— small presentational helpers ——————————— */
-const Li = ({label,cb,disabled})=>(
+const Li = ({ label, cb, disabled }) => (
   <li>
     <button
       disabled={disabled}
       onClick={cb}
       className="w-full text-left px-3 py-1.5 text-sm hover:bg-slate-100 disabled:text-slate-400"
-    >{label}</button>
+    >
+      {label}
+    </button>
   </li>
 );
 
-const Modal = ({children,onClose})=>(
-  <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/30"
-       onClick={onClose}>
-    <div className="max-h-[90vh] w-[34rem] overflow-y-auto bg-white rounded shadow-lg p-6"
-         onClick={e=>e.stopPropagation()}>
+const Modal = ({ children, onClose }) => (
+  <div
+    className="fixed inset-0 z-20 flex items-center justify-center bg-black/30"
+    onClick={onClose}
+  >
+    <div
+      className="max-h-[90vh] w-[34rem] overflow-y-auto bg-white rounded shadow-lg p-6"
+      onClick={e => e.stopPropagation()}
+    >
       {children}
     </div>
   </div>
 );
 
-const Field = ({label,value,onChange})=>(
+const Field = ({ label, value, onChange }) => (
   <label className="block">
     <span className="text-sm text-slate-600">{label}</span>
     <input
       className="mt-1 w-full border-b outline-none focus:border-blue-500 py-1"
-      value={value} onChange={onChange}
+      value={value}
+      onChange={onChange}
     />
   </label>
 );
 
-const ModalButtons = ({onCancel,onSave})=>(
+const ModalButtons = ({ onCancel, onSave }) => (
   <div className="flex justify-end gap-3">
-    <button className="px-4 py-1.5 rounded bg-slate-100" onClick={onCancel}>Cancel</button>
-    <button className="px-4 py-1.5 rounded bg-blue-600 text-white" onClick={onSave}>Save</button>
+    <button
+      className="px-4 py-1.5 rounded bg-slate-100"
+      onClick={onCancel}
+    >
+      Cancel
+    </button>
+    <button
+      className="px-4 py-1.5 rounded bg-blue-600 text-white"
+      onClick={onSave}
+    >
+      Save
+    </button>
   </div>
 );
 
