@@ -4,6 +4,9 @@ import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import Dashboard from "./pages/Dashboard";
 import CpDetail   from "@/pages/CpDetail.jsx";
+import ForgotPassword        from "./pages/ForgotPassword";
+import ResetPasswordConfirm  from "./pages/ResetPasswordConfirm";
+
 
 function ProtectedRoute({ children }) {
   const { isAuth } = useAuth();
@@ -16,6 +19,11 @@ export default function App() {
       <Route path="/cp/:id"    element={<CpDetail />} />
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
+      <Route path="/forgot-password"  element={<ForgotPassword />} />
+      <Route
+        path="/reset-password/:uid/:token"
+        element={<ResetPasswordConfirm />}
+      />
       <Route
         path="/"
         element={

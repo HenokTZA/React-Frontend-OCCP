@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 
+
 export default function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
@@ -44,6 +45,11 @@ export default function Login() {
         </button>
         <p className="text-center text-sm">
           No account? <Link to="/signup" className="link">Sign up</Link>
+        </p>
+        <p className="mt-2 text-sm text-center">
+          <Link to="/forgot-password" className="link link-secondary">
+            Forgot password?
+          </Link>
         </p>
       </form>
     </div>
