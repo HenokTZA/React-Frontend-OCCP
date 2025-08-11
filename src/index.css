@@ -15,3 +15,8 @@
   background:#f1f5f9;
 }
 
+/* in index.css */
+.leaflet-container {
+  position: relative;
+}
+
