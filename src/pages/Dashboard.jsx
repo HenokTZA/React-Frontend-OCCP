@@ -5,7 +5,8 @@ import { useEffect, useState, useRef } from "react";
 import { createPortal }        from "react-dom";
 import { fetchJson }           from "@/lib/api";
 import { useAuth }             from "@/lib/auth";
-
+import { Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 
@@ -59,6 +60,7 @@ export default function Dashboard() {
 
   /* login + first fetch */
   const { logout } = useAuth();
+  const navigate = useNavigate();
   useEffect(() => {
     fetchJson("/me").then(setMe).catch(() => logout());
   }, []);
@@ -75,6 +77,16 @@ export default function Dashboard() {
     const t = setInterval(load, 5_000);
     return () => clearInterval(t);
   }, [me]);
+
+  async function handleLogout() {
+    try {
+      await logout();              // clear session client/server
+      navigate("/login"); 
+    } finally {
+      navigate("/login", { replace: true }); // go to login, prevent back nav
+    }
+  }
+
 
   /* optimistic UI helpers ----------------------------------------- */
   async function updatePrices(id) {
@@ -618,7 +630,20 @@ function LocationPickerModal({ address, setAddress, lat, setLat, lng, setLng, on
   /* ─────────────── render ───────────────────────────────────────── */
   return (
     <div className="p-8 space-y-10">
-      <h1 className="text-2xl font-bold">Dashboard</h1>
+      <h1 className="text-2xl font-bold flex items-center justify-between">
+  <span>Dashboard</span>
+  <Link
+    to="/reports"
+    className="px-4 py-1.5 rounded bg-emerald-600 text-white hover:bg-emerald-700"
+  >
+    Create report
+  </Link>
+
+<Link to="/diagnose" className="btn btn-outline">
+          Diagnose
+        </Link>
+<button className="btn" onClick={handleLogout}>Logout</button>
+</h1>
 
       {/* websocket url */}
       <div>
