@@ -12,10 +12,12 @@ export default function Login() {
   async function handleSubmit(e) {
     e.preventDefault();
     try {
-      await login(form);
-      navigate("/");
-    } catch {
-      setError("Invalid credentials");
+      const role = await login(form);
+      if (role === "super_admin") navigate("/");
+      else                        navigate("/app");
+    } catch (e) {
+      //setError(err.message || "Login failed");
+     setError(e?.message || "Invalid username or password");
     }
   }
 

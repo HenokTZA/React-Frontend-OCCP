@@ -1,17 +1,30 @@
 // src/lib/auth.jsx
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { fetchJson } from "./api";
+import { fetchJson } from "@/lib/api";
 
 const AuthCtx = createContext(null);
+
+// Normalize legacy roles -> your two roles
+const mapRole = (r) => {
+  const m = {
+    root: "super_admin",
+    admin: "super_admin",
+    cp_admin: "super_admin",
+    super_admin: "super_admin",
+    user: "user",
+    normal: "user",
+  };
+  return m[r] || r || "user";
+};
 
 // --- helpers ---
 function parseJwt(token) {
   try {
     const payload = token.split(".")[1];
     const json = atob(payload.replace(/-/g, "+").replace(/_/g, "/"));
-    return JSON.parse(decodeURIComponent(escape(json)));
+    return JSON.parse(json); // keep simple; returns {}
   } catch {
-    return null;
+    return {};
   }
 }
 
@@ -33,69 +46,6 @@ export function AuthProvider({ children }) {
       clearTimeout(refreshTimer.current);
       refreshTimer.current = null;
     }
-  }
-
-  function setTokens({ access, refresh }) {
-    if (access) localStorage.setItem("accessToken", access);
-    if (refresh) localStorage.setItem("refreshToken", refresh);
-    scheduleRefresh(access || localStorage.getItem("accessToken"));
-  }
-
-  function clearTokens() {
-    clearRefreshTimer();
-    localStorage.removeItem("accessToken");
-    localStorage.removeItem("refreshToken");
-  }
-
-  async function tryMe() {
-    // fetch current user; if 401, try to refresh and retry once
-    try {
-      const me = await fetchJson("/me/");
-      setUser(me);
-      return true;
-    } catch (e) {
-      // attempt refresh if unauthorized
-      try {
-        await refreshTokens();
-        const me = await fetchJson("/me/");
-        setUser(me);
-        return true;
-      } catch {
-        setUser(null);
-        return false;
-      }
-    }
-  }
-
-  async function refreshTokens() {
-    const refresh = localStorage.getItem("refreshToken");
-    if (!refresh) throw new Error("No refresh token");
-
-    // some backends use /auth/refresh/, others /auth/token/refresh/
-    // we will try both, first one that works wins
-    async function call(path) {
-      return fetchJson(path, {
-        method: "POST",
-        body: JSON.stringify({ refresh }),
-      });
-    }
-
-    let data;
-    try {
-      data = await call("/auth/refresh/");
-    } catch {
-      data = await call("/auth/token/refresh/");
-    }
-
-    // expected shapes: { access } or { access, refresh }
-    if (!data?.access && !data?.token && !data?.accessToken) {
-      throw new Error("Refresh failed");
-    }
-
-    const access = data.access || data.token || data.accessToken;
-    const newRefresh = data.refresh || null;
-    setTokens({ access, refresh: newRefresh || refresh });
-    return access;
   }
 
   function scheduleRefresh(accessToken) {
@@ -120,6 +70,67 @@ export function AuthProvider({ children }) {
     }, delta);
   }
 
+  function setTokens({ access, refresh }) {
+    if (access) localStorage.setItem("accessToken", access);
+    if (refresh) localStorage.setItem("refreshToken", refresh);
+    scheduleRefresh(access || localStorage.getItem("accessToken"));
+  }
+
+  function clearTokens() {
+    clearRefreshTimer();
+    localStorage.removeItem("accessToken");
+    localStorage.removeItem("refreshToken");
+  }
+
+  async function refreshTokens() {
+    const refresh = localStorage.getItem("refreshToken");
+    if (!refresh) throw new Error("No refresh token");
+
+    async function call(path) {
+      return fetchJson(path, {
+        method: "POST",
+        body: JSON.stringify({ refresh }),
+      });
+    }
+
+    let data;
+    try {
+      data = await call("/auth/refresh/");
+    } catch {
+      data = await call("/auth/token/refresh/");
+    }
+
+    if (!data?.access && !data?.token && !data?.accessToken) {
+      throw new Error("Refresh failed");
+    }
+
+    const access = data.access || data.token || data.accessToken;
+    const newRefresh = data.refresh || null;
+    setTokens({ access, refresh: newRefresh || refresh });
+    return access;
+  }
+
+  async function tryMe() {
+    try {
+      const me = await fetchJson("/me/");
+      // prefer stored role or server role
+      const storedRole = localStorage.getItem("role");
+      setUser({ ...me, role: mapRole(storedRole || me?.role) });
+      return true;
+    } catch {
+      try {
+        await refreshTokens();
+        const me = await fetchJson("/me/");
+        const storedRole = localStorage.getItem("role");
+        setUser({ ...me, role: mapRole(storedRole || me?.role) });
+        return true;
+      } catch {
+        setUser(null);
+        return false;
+      }
+    }
+  }
+
   // on mount: if we have a token, load /me
   useEffect(() => {
     (async () => {
@@ -140,7 +151,7 @@ export function AuthProvider({ children }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // --- public API ---
+  // --- public API (NO exports here; these are provided via context) ---
 
   async function login({ username, password }) {
     const data = await fetchJson("/auth/login/", {
@@ -148,13 +159,20 @@ export function AuthProvider({ children }) {
       body: JSON.stringify({ username, password }),
     });
 
-    // expected response: { access, refresh }
-    const access = data.access || data.token || data.accessToken;
+    const access  = data.access || data.token || data.accessToken;
     const refresh = data.refresh;
-    if (!access) throw new Error("Login failed");
+    if (!access) throw new Error("No access token");
+
+    // Get role from server field OR JWT claim
+    const role = mapRole(data.role || parseJwt(access)?.role);
+    localStorage.setItem("role", role);
 
     setTokens({ access, refresh });
-    await tryMe();
+
+    const me = await fetchJson("/me/");
+    setUser({ ...me, role: role || mapRole(me?.role) });
+
+    return role; // callers can redirect based on role
   }
 
   async function signup({ username, email, password, role }) {
@@ -165,16 +183,14 @@ export function AuthProvider({ children }) {
   }
 
   async function logout() {
-    // optional server-side logout
     try {
-             const refresh = localStorage.getItem("refreshToken");
-     await fetchJson("/auth/logout/", {
-       method: "POST",
-       body: JSON.stringify({ refresh }),            // ← send refresh
-     });      
-
+      const refresh = localStorage.getItem("refreshToken");
+      await fetchJson("/auth/logout/", {
+        method: "POST",
+        body: JSON.stringify({ refresh }),
+      });
     } catch {
-      // ignore network/server errors here
+      // ignore server errors on logout
     } finally {
       clearTokens();
       setUser(null);

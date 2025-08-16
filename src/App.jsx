@@ -9,6 +9,10 @@ import ResetPasswordConfirm  from "./pages/ResetPasswordConfirm";
 import Reports from "./pages/Reports";
 import DiagnoseList from "@/pages/DiagnoseList.jsx";
 import DiagnoseDetail from "@/pages/DiagnoseDetail.jsx";
+import NormalUserApp from "./user/NormalUserApp";
+import { Protected, RequireRole } from "@/lib/roles";
+// import AdminApp from "@/admin/AdminApp";
+import AdminApp from "@/pages/Dashboard";
 
 function ProtectedRoute({ children }) {
   const { isAuth } = useAuth();
@@ -44,6 +48,32 @@ export default function App() {
     </ProtectedRoute>
   }
 />
+{/* Admin area (super_admin only) */}
+      <Route
+        path="/*"
+        element={
+          <Protected>
+            <RequireRole allow={["super_admin"]} redirect="/app">
+              <AdminApp />
+            </RequireRole>
+          </Protected>
+        }
+      />
+
+      {/* Normal user area */}
+      <Route
+        path="/app/*"
+        element={
+          <Protected>
+            <RequireRole allow={["user"]} redirect="/">
+              <NormalUserApp />
+            </RequireRole>
+          </Protected>
+        }
+      />
+
+      {/* Fallback */}
+      <Route path="*" element={<Navigate to="/" replace />} />
 
     </Routes>
   );
