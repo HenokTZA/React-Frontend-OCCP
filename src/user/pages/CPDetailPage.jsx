@@ -11,8 +11,8 @@ export default function CPDetailPage({ byCode = false }) {
     (async () => {
       try {
         const path = byCode
-          ? `/charge-points/by-code/${encodeURIComponent(code)}/`
-          : `/charge-points/${encodeURIComponent(cpId)}/`;
+          ? `/public/charge-points/by-code/${encodeURIComponent(code)}/` // only if you add this backend route later
+          : `/public/charge-points/${encodeURIComponent(cpId)}/`; 
         const data = await fetchJson(path);
         setCp(data);
       } catch (e) {

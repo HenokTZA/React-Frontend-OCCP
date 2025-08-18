@@ -35,7 +35,7 @@ export default function MapPage() {
   useEffect(() => {
     (async () => {
       try {
-        const data = await fetchJson("/charge-points/");
+        const data = await fetchJson("/public/charge-points/");
         setCps(Array.isArray(data) ? data : []);
       } catch {
         setErr("Failed to load charge points");
@@ -47,7 +47,8 @@ export default function MapPage() {
     () =>
       (cps || [])
         .map(p => ({ ...p, lat: Number(p.lat), lng: Number(p.lng) }))
-        .filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lng) && p.pk),
+        .map(p => ({ ...p, _id: p.pk ?? p.id }))
+        .filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lng) && p._id),
     [cps]
   );
 
@@ -61,10 +62,10 @@ export default function MapPage() {
         />
         <FitBounds points={points} />
         {points.map(cp => {
-          const to = `/app/map/${encodeURIComponent(cp.pk)}`; // <-- always pk
+          const to = `/app/map/${encodeURIComponent(cp._id)}`;
           return (
             <Marker
-              key={String(cp.pk)}
+              key={String(cp._id)}
               position={[cp.lat, cp.lng]}
               icon={markerIcon}
               eventHandlers={{ click: () => navigate(to) }}
