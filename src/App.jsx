@@ -27,19 +27,13 @@ export default function App() {
       <Route path="/signup" element={<Signup />} />
       <Route path="/diagnose" element={<DiagnoseList />} />
       <Route path="/diagnose" element={<DiagnoseList />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/diagnose/:id" element={<DiagnoseDetail />} />
       <Route
         path="/reset-password/:uid/:token"
         element={<ResetPasswordConfirm />}
       />
-      <Route
-        path="/"
-        element={
-          <ProtectedRoute>
-            <Dashboard />
-          </ProtectedRoute>
-        }
-      />
+      <Route path="/" element={ <ProtectedRoute> <Dashboard /> </ProtectedRoute> } />
    <Route
   path="/reports"
   element={

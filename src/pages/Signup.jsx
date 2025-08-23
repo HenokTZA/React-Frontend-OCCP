@@ -57,14 +57,16 @@ export default function Signup() {
         />
 
         <select
-          name="role"
-          className="w-full select select-bordered mb-4"
-          value={form.role}
-          onChange={onChange}
-        >
-          <option value="user">Normal User</option>
-          <option value="super_admin">Super Admin</option>
-        </select>
+  name="role"
+  className="w-full select select-bordered mb-4"
+  value={form.role}
+  onChange={onChange}
+>
+  <option value="user">Normal User</option>
+  <option value="super_admin">Super Admin</option>
+  
+</select>
+
 
         {error && <p className="text-red-600 text-sm mb-3">{error}</p>}
 
