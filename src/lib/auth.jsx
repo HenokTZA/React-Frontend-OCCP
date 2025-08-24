@@ -175,12 +175,48 @@ export function AuthProvider({ children }) {
     return role; // callers can redirect based on role
   }
 
-  async function signup({ username, email, password, role }) {
-    await fetchJson("/auth/signup/", {
+  // Auth.jsx (only the signup function)
+async function signup({
+  username,
+  email,
+  full_name,
+  phone,
+  password,
+  password2,
+  role = "user",
+}) {
+  const payload = {
+    username: (username || "").trim(),
+    email: (email || "").trim(),
+    full_name: (full_name || "").trim(),
+    phone: (phone || "").trim(),
+    password,
+    password2,
+    role, // "user" or "super_admin"
+  };
+
+  try {
+    // If your fetchJson auto-prefixes /api, keep "/auth/signup/" as-is
+    return await fetchJson("/auth/signup/", {
       method: "POST",
-      body: JSON.stringify({ username, email, password, role }),
+      body: JSON.stringify(payload),
     });
+  } catch (e) {
+    // Normalize server-side field errors into a friendly message
+    let msg = e?.message || "Signup failed";
+    if (e?.data && typeof e.data === "object") {
+      // e.g. { password2: ["Passwords do not match."] }
+      const firstKey = Object.keys(e.data)[0];
+      if (firstKey) {
+        const val = e.data[firstKey];
+        if (Array.isArray(val) && val[0]) msg = val[0];
+        else if (typeof val === "string") msg = val;
+      }
+    }
+    throw new Error(msg);
   }
+}
+
 
   async function logout() {
     try {
