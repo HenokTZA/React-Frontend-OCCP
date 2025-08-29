@@ -32,6 +32,39 @@ function patchCP(pk, body) {
   });
 }
 
+
+
+// --- Revenue helpers ---
+function money(n) {
+  const x = Number(n || 0);
+  return `€${x.toFixed(2)}`;
+}
+
+function sessionRevenue(s, cps) {
+  // Find CP to read its price(s)
+  const cp = cps?.find(c => c.id === s.cp);
+  if (!cp) return 0;
+
+  const kWh = Number(s.kWh ?? s.kwh ?? 0);
+  const byEnergy = (Number(cp.price_per_kwh) || 0) * kWh;
+
+  // Optional time-based part if both Started/Ended + price_per_hour exist
+  let byTime = 0;
+  if (cp.price_per_hour && (s.Started || s.started) && (s.Ended || s.ended)) {
+    const start = new Date(s.Started || s.started);
+    const end   = new Date(s.Ended   || s.ended);
+    const hours = Math.max(0, (end - start) / 36e5);
+    byTime = hours * Number(cp.price_per_hour);
+  }
+  return byEnergy;
+}
+
+
+
+
+
+
+
 /* ────────────────────────────────────────────────────────────────── */
 export default function Dashboard() {
   /* server-side data */
@@ -55,6 +88,8 @@ export default function Dashboard() {
   const { logout } = useAuth();
   const navigate = useNavigate();
 
+  const [stats, setStats] = useState(null);   // NEW
+
   useEffect(() => {
     fetchJson("/me/").then(setMe).catch(() => logout());
   }, [logout]);
@@ -64,10 +99,11 @@ export default function Dashboard() {
     if (!me?.tenant_ws) return;
 
     const load = () =>
-      Promise.all([fetchJson("/charge-points/"), fetchJson("/sessions/")]).then(
-        ([c, s]) => {
+      Promise.all([fetchJson("/charge-points/"), fetchJson("/sessions/"), fetchJson("/admin/charge-points/stats/")]).then(
+        ([c, s, st]) => {
           setCps(c);
           setSes(s);
+          setStats(st);
         }
       );
 
@@ -115,6 +151,22 @@ export default function Dashboard() {
   if (!me.tenant_ws) return <p className="p-8">You don’t own a tenant yet.</p>;
   if (!cps || !sessions) return <p className="p-8">Loading charge-points…</p>;
 
+  // —— Revenue totals ——
+const lifetimeRevenue = sessions.reduce((sum, s) => sum + sessionRevenue(s, cps), 0);
+
+const now = new Date();
+const month = now.getMonth();
+const year  = now.getFullYear();
+
+const monthRevenue = sessions
+  .filter(s => {
+    const d = new Date((s.Ended || s.ended || s.Started || s.started || now));
+    return d.getMonth() === month && d.getFullYear() === year;
+  })
+  .reduce((sum, s) => sum + sessionRevenue(s, cps), 0);
+
+
+
   /* ─────────────── render ───────────────────────────────────────── */
   return (
     <div className="p-8 space-y-10">
@@ -135,6 +187,46 @@ export default function Dashboard() {
           </button>
         </div>
       </h1>
+
+
+{/* Revenue summary */}
+<div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
+  <div className="card bg-base-200">
+    <div className="card-body">
+      <div className="text-xs opacity-70">Total revenue (lifetime)</div>
+      <div className="text-3xl font-semibold">{money(lifetimeRevenue)}</div>
+    </div>
+  </div>
+
+  <div className="card bg-base-200">
+    <div className="card-body">
+      <div className="text-xs opacity-70">
+        Revenue this month ({now.toLocaleString(undefined, { month: 'long', year: 'numeric' })})
+      </div>
+      <div className="text-3xl font-semibold">{money(monthRevenue)}</div>
+    </div>
+  </div>
+</div>
+
+
+
+
+
+{/* CP status summary */}
+{(() => {
+  const t = stats?.totals || {};
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+      <StatCard label="Available"   value={t.available} />
+      <StatCard label="Unavailable" value={t.unavailable} />
+      <StatCard label="Charging"    value={t.charging} />
+      <StatCard label="Occupied"    value={t.occupied} />
+      <StatCard label="Preparing"   value={t.preparing} />
+      <StatCard label="Other"       value={t.other} />
+    </div>
+  );
+})()}
+
 
       {/* websocket url */}
       <div>
@@ -423,6 +515,8 @@ function LocationPickerModal({
     });
   }
 
+
+
   function geocodeFromInput(e) {
     if (e.key !== "Enter" || !mapRef.current) return;
     e.preventDefault();
@@ -464,6 +558,19 @@ function LocationPickerModal({
     </Modal>
   );
 }
+
+function StatCard({ label, value }) {
+  return (
+    <div className="card bg-base-200">
+      <div className="card-body items-center">
+        <div className="text-xs opacity-70">{label}</div>
+        <div className="text-3xl font-semibold">{value ?? 0}</div>
+      </div>
+    </div>
+  );
+}
+
+
 
 /* ——————————— small presentational helpers ——————————— */
 const Li = ({ label, cb, disabled }) => (
